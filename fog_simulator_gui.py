@@ -132,9 +132,26 @@ class FogSimulationThread(QThread):
             )
 
             # Get APEATO decision
+            # Get APEATO decision
             try:
                 loc, details = self.apeato.make_decision(task, state)
+                
+                # Execute and Learn (Update Q-Table)
+                result = self.apeato.execute_and_learn(task, state, loc)
+                
+                # Update Q-Table JSON immediately
+                self.apeato.save_q_table()
+                
+                # Merge learn results into details for UI if needed
+                details.update({
+                    'actual_energy': result['energy'],
+                    'actual_latency': result['latency'],
+                    'reward': result['reward'],
+                    'optimal': result['optimal']
+                })
+                
             except Exception as e:
+                print(f"Algorithm Error: {e}")
                 loc = None
                 details = {}
 
@@ -176,6 +193,9 @@ class FogSimulationThread(QThread):
 
     def stop(self):
         self.running = False
+        # Save Q-Table on stop
+        if hasattr(self, 'apeato'):
+            self.apeato.save_q_table()
 
     def pause(self):
         self.paused = True
@@ -802,6 +822,7 @@ class FogSimulatorGUI(QMainWindow):
         self.setWindowTitle("APEATO Enhanced - Task Flow Visualizer")
         self.setGeometry(80, 40, 1600, 950)
         self.apeato = APEATOAlgorithm()
+        self.apeato.load_q_table()
 
         # Load tasks
         self.tasks = self._load_tasks_from_csv(CSV_FILE)
@@ -1155,6 +1176,7 @@ class FogSimulatorGUI(QMainWindow):
 
     def _on_sim_finished(self):
         self.status_bar.showMessage("Simulation completed!")
+        self.apeato.save_q_table()
         
     def _on_new_task(self, task: TaskDataclass, state: dict):
         # Add to task flow
