@@ -63,6 +63,12 @@ class FogSimulationThread(QThread):
         self.speed = speed
         self.sim_time = 0.0 # Pause-aware simulation time
 
+        # Initialize Real-time Monitoring
+        psutil.cpu_percent(interval=None) # First call to init counter
+        self.last_net_io = psutil.net_io_counters()
+        self.last_bw_time = time.time()
+        self.current_bandwidth = 10e6 # Start with 10 Mbps estimate
+
     def run(self):
         self.running = True
         self.paused = False
@@ -96,8 +102,28 @@ class FogSimulationThread(QThread):
             except:
                 cpu_load = 50.0
 
-            # Simulated Bandwidth (Hard to measure real available BW instantly)
-            bandwidth = max(1e6, min(200e6, 30e6 + (math.cos(self.sim_time / 30.0) * 40e6) + random.uniform(-5e6, 5e6)))
+            # Real Bandwidth Calculation
+            try:
+                now = time.time()
+                bw_dt = now - self.last_bw_time
+                # Update bandwidth calc every ~0.5s to get stable readings
+                if bw_dt >= 0.5:
+                    cur_io = psutil.net_io_counters()
+                    # Total bytes (up + down)
+                    delta_bytes = (cur_io.bytes_sent + cur_io.bytes_recv) - \
+                                  (self.last_net_io.bytes_sent + self.last_net_io.bytes_recv)
+                    
+                    # Bits per second
+                    if delta_bytes < 0: delta_bytes = 0 # Handle wrap-around potentially
+                    self.current_bandwidth = (delta_bytes * 8) / bw_dt
+                    
+                    self.last_net_io = cur_io
+                    self.last_bw_time = now
+                
+                bandwidth = max(100000.0, self.current_bandwidth) # Min 100kbps safety
+            except Exception as e:
+                print(f"Bandwidth Error: {e}")
+                bandwidth = 10e6 # Fallback 10Mbps
             
             time_of_day = datetime.now().hour
             activity = random.choice(list(Activity))
