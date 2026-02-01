@@ -1,151 +1,348 @@
-import psutil
-import random
-import csv
-from datetime import datetime
+import json
+import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import os
+from ahpy import Compare
 
-def get_cpu_speed():
-    """Get CPU frequency in Hz. Fallback to 2.5GHz if detection fails."""
-    try:
-        freq = psutil.cpu_freq()
-        if freq:
-            return freq.max * 1_000_000  # Convert MHz to Hz
-    except:
-        pass
-    return 2.5e9  # Fallback: 2.5 GHz
 
-# Global CPU speed for calibration
-CPU_CYCLES_PER_SEC = get_cpu_speed()
-print(f"Detected CPU Calibration Speed: {CPU_CYCLES_PER_SEC/1e9:.2f} GHz")
 
-def generate_task(task_id, task_type):
-    """Generate a task of specific type with realistic parameters based on current hardware"""
-    
-    # Define deadlines first (seconds)
-    # Light: fast response (100ms - 500ms)
-    # Medium: interactive (500ms - 2s)
-    # Heavy: batch processing (1s - 5s)
-    deadline_ranges = {
-        'light': (0.1, 0.5),
-        'medium': (0.5, 2.0),
-        'heavy': (1.0, 5.0)
-    }
+# Load APEATO results
+with open("/hoame/kiyotoka/Desktop/os/YAFS/apeato_simulation_results.json") as f:
+    data = json.load(f)
 
-    deadline_range = deadline_ranges[task_type]
-    deadline = random.uniform(*deadline_range)
+stats = data["statistics"]
 
-    # Calculate max possible cycles this specific laptop can do in that deadline
-    max_cycles = deadline * CPU_CYCLES_PER_SEC
+apeato_energy = stats["energy"]["average_per_task"]
+apeato_latency = stats["latency"]["average_per_task"]
+apeato_deadline = stats["deadline_performance"]["success_rate_percent"] / 100
 
-    # Task Difficulty Factors (percentage of max utilization)
-    # Light: Uses 1% - 10% of CPU time within deadline
-    # Medium: Uses 30% - 70% of CPU time within deadline
-    # Heavy: Uses 60% - 110% of CPU time (some might miss deadline on purpose!)
-    difficulty_profiles = {
-        'light': (0.01, 0.10),
-        'medium': (0.30, 0.70),
-        'heavy': (0.60, 1.10)
-    }
+# Baselines
+df = pd.DataFrame({
+    "Strategy": ["Local", "Edge", "Cloud", "APEATO"],
+    "Energy":  [2.5, 0.15, 0.45, apeato_energy],
+    "Latency": [26.5, 52.5, 310.0, apeato_latency],
+    "DeadlineSuccess": [0.70, 0.70, 0.85, apeato_deadline]
+})
 
-    diff_min, diff_max = difficulty_profiles[task_type]
-    utilization = random.uniform(diff_min, diff_max)
-    workload = max_cycles * utilization
 
-    # Data sizes (RAM/Network usage)
-    # Light: 1KB - 100KB
-    # Medium: 100KB - 5MB
-    # Heavy: 5MB - 50MB
-    data_size_ranges = {
-        'light': (1e3, 1e5),
-        'medium': (1e5, 5e6),
-        'heavy': (5e6, 50e6)
-    }
-    
-    params_data = data_size_ranges[task_type]
-    data_size = random.uniform(*params_data)
+# ===========================================================
+# 1️⃣ Weighted Sum Method (WSM)
+# ===========================================================
+weights = {"Energy": 0.4, "Latency": 0.3, "DeadlineSuccess": 0.3}
 
-    # Result ratio (output size relative to input)
-    result_ratios = {
-        'light': 0.1,
-        'medium': 0.2,
-        'heavy': 0.3
-    }
-    result_size = data_size * result_ratios[task_type] * random.uniform(0.8, 1.2)
+# normalize (minimize Energy, min Latency, maximize Deadline)
+df_norm = df.copy()
+df_norm["Energy"] = df["Energy"].min() / df["Energy"]
+df_norm["Latency"] = df["Latency"].min() / df["Latency"]
+df_norm["DeadlineSuccess"] = df["DeadlineSuccess"] / df["DeadlineSuccess"].max()
 
-    # Priority Weights
-    priority_weights = {
-        'light': [0.2, 0.6, 0.2],    # Mostly Medium
-        'medium': [0.1, 0.5, 0.4],   # Medium/High
-        'heavy': [0.05, 0.3, 0.65]   # Mostly High
-    }
-    
-    priority = random.choices([0, 1, 2], weights=priority_weights[task_type], k=1)[0]
-    
-    # Output
-    return {
-        'task_id': task_id,
-        'workload': round(workload, 2),
-        'data_size': round(data_size, 2),
-        'result_size': round(result_size, 2),
-        'priority': priority,
-        'deadline': round(deadline, 2),
-        'type': task_type
-    }
+df["WSM_Score"] = (
+    df_norm["Energy"] * weights["Energy"] +
+    df_norm["Latency"] * weights["Latency"] +
+    df_norm["DeadlineSuccess"] * weights["DeadlineSuccess"]
+)
 
-def generate_tasks(num_tasks=10000):
-    """Generate a list of tasks with diverse characteristics"""
-    tasks = []
-    
-    # Define task type distribution
-    task_distribution = ['light'] * 4000 + ['medium'] * 4000 + ['heavy'] * 2000
-    random.shuffle(task_distribution)
-    
-    for i in range(num_tasks):
-        task_type = task_distribution[i]
-        task = generate_task(i + 1, task_type)
-        tasks.append(task)
-        
-        # Print progress
-        if (i + 1) % 1000 == 0:
-            print(f"Generated {i + 1}/{num_tasks} tasks...")
-    
-    return tasks
 
-def save_tasks_to_csv(tasks, filename='diverse_tasks.csv'):
-    """Save tasks to a CSV file"""
-    if not tasks:
-        print("No tasks to save!")
-        return
-    
-    with open(filename, 'w', newline='') as f:
-        fieldnames = ['task_id', 'workload', 'data_size', 'result_size', 'priority', 'deadline', 'type']
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(tasks)
-    
-    print(f"\nSuccessfully saved {len(tasks)} tasks to {filename}")
+# ===========================================================
+# 2️⃣ TOPSIS (Manual Implementation)
+# ===========================================================
+matrix = df[["Energy", "Latency", "DeadlineSuccess"]].to_numpy()
+norm = matrix / np.sqrt((matrix ** 2).sum(axis=0))
 
-if __name__ == "__main__":
-    # Set random seed for reproducibility
-    random.seed(42)
-    np.random.seed(42)
+# Weights
+w = np.array([0.4, 0.3, 0.3])
+norm_w = norm * w
+
+ideal_best = np.array([
+    norm_w[:,0].min(),   # Energy MIN
+    norm_w[:,1].min(),   # Latency MIN
+    norm_w[:,2].max()    # Deadline MAX
+])
+
+ideal_worst = np.array([
+    norm_w[:,0].max(),
+    norm_w[:,1].max(),
+    norm_w[:,2].min()
+])
+
+d_best = np.sqrt(((norm_w - ideal_best) ** 2).sum(axis=1))
+d_worst = np.sqrt(((norm_w - ideal_worst) ** 2).sum(axis=1))
+
+df["TOPSIS_Score"] = d_worst / (d_best + d_worst)
+
+
+# ===========================================================
+# 3️⃣ Analytic Hierarchy Process (AHP)
+# ===========================================================
+# ==========================================
+# AHP (using ahpy.Compare)
+# ==========================================
+
+# ==========================================
+# AHP (Compatible with AHPy)
+# ==========================================
+# ==========================================
+# AHP (Compatible with AHPy)
+# ==========================================
+
+# Define the comparison matrix in the correct format
+criteria_comparisons = {
+    ('Energy', 'Latency'): 3,           # Energy is moderately more important than Latency
+    ('Energy', 'DeadlineSuccess'): 5,   # Energy is strongly more important than DeadlineSuccess
+    ('Latency', 'DeadlineSuccess'): 4   # Latency is moderately to strongly more important than DeadlineSuccess
+}
+
+# Create the comparison object
+criteria_compare = Compare('Criteria', criteria_comparisons, precision=4)
+
+# Get the weights
+criteria_weights = criteria_compare.target_weights
+
+# Normalize the weights to sum to 1 (just to be safe)
+total = sum(criteria_weights.values())
+criteria_weights = {k: v/total for k, v in criteria_weights.items()}
+
+# Calculate AHP score
+df["AHP_Score"] = (
+    (1 / df["Energy"]) * criteria_weights['Energy'] +
+    (1 / df["Latency"]) * criteria_weights['Latency'] +
+    df["DeadlineSuccess"] * criteria_weights['DeadlineSuccess']
+)
+
+
+
+# ===========================================================
+# FINAL RANKING
+# ===========================================================
+df["Final_Rank"] = df[["WSM_Score", "TOPSIS_Score", "AHP_Score"]].mean(axis=1).rank(ascending=False)
+
+
+# ===========================================================
+# GRAPHS
+# ===========================================================
+# Update the save_plot function to use the images directory
+def save_plot(title, y, filename):
+    # Create images directory if it doesn't exist
+    os.makedirs("images", exist_ok=True)
+    plt.figure()
+    plt.bar(df["Strategy"], y)
+    plt.title(title)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(f"images/{filename}")
+    plt.close()
+
+save_plot("WSM Score Comparison", df["WSM_Score"], "wsm_scores.png")
+save_plot("TOPSIS Score Comparison", df["TOPSIS_Score"], "topsis_scores.png")
+save_plot("AHP Score Comparison", df["AHP_Score"], "ahp_scores.png")
+
+# Combined
+plt.figure()
+index = np.arange(len(df))
+bar_width = 0.25
+
+plt.bar(index, df["WSM_Score"], width=bar_width, label="WSM")
+plt.bar(index + bar_width, df["TOPSIS_Score"], width=bar_width, label="TOPSIS")
+plt.bar(index + 2 * bar_width, df["AHP_Score"], width=bar_width, label="AHP")
+
+plt.xticks(index + bar_width, df["Strategy"], rotation=45)
+plt.legend()
+plt.title("Comparison of All MCDM Methods")
+plt.tight_layout()
+plt.savefig("images/combined_scores.png")
+plt.close()
+
+
+# PRINT RESULTS
+print("\n===== FINAL RESULTS =====\n")
+print(df)
+print("\nGraphs saved in /mnt/data/")
+
+
+# ===========================================================
+# ACCURACY COMPARISON
+# ===========================================================
+print("\n===== ACCURACY COMPARISON (vs APEATO) =====")
+
+# Get APEATO's values as baseline
+apeato_values = df[df['Strategy'] == 'APEATO'][['Energy', 'Latency', 'DeadlineSuccess']].iloc[0]
+
+# Calculate accuracy for each metric
+metrics = ['Energy', 'Latency', 'DeadlineSuccess']
+for metric in metrics:
+    print(f"\n--- {metric} ---")
+    for idx, row in df.iterrows():
+        if row['Strategy'] != 'APEATO':
+            if metric == 'DeadlineSuccess':
+                # Higher is better
+                accuracy = (row[metric] / apeato_values[metric]) * 100
+            else:
+                # Lower is better (for Energy and Latency)
+                accuracy = (apeato_values[metric] / row[metric]) * 100
+            print(f"{row['Strategy']} vs APEATO: {accuracy:.2f}%")
+
+# Visualize accuracy comparison
+plt.figure(figsize=(12, 6))
+metrics = ['Energy', 'Latency', 'DeadlineSuccess']
+x = np.arange(len(metrics))
+width = 0.25
+
+for i, strategy in enumerate(['Local', 'Edge', 'Cloud']):
+    accuracies = []
+    for metric in metrics:
+        if metric == 'DeadlineSuccess':
+            acc = (df[df['Strategy'] == strategy][metric].values[0] / 
+                   df[df['Strategy'] == 'APEATO'][metric].values[0]) * 100
+        else:
+            acc = (df[df['Strategy'] == 'APEATO'][metric].values[0] / 
+                   df[df['Strategy'] == strategy][metric].values[0]) * 100
+        accuracies.append(acc)
     
-    print("Generating 10,000 diverse tasks...")
-    tasks = generate_tasks(10000)
+    plt.bar(x + i*width, accuracies, width, label=strategy)
+
+plt.xlabel('Metrics')
+plt.ylabel('Accuracy (%)')
+plt.title('Accuracy Comparison with APEATO (Higher is better)')
+plt.xticks(x + width, metrics)
+plt.legend()
+plt.tight_layout()
+plt.savefig("images/accuracy_comparison.png")
+plt.close()
+
+print("\nAccuracy comparison plot saved to images/accuracy_comparison.png")
+
+
+
+# ===========================================================
+# COMPREHENSIVE COMPARISON MATRIX
+# ===========================================================
+print("\n===== COMPREHENSIVE COMPARISON MATRIX =====")
+
+# Function to compare two strategies
+def compare_strategies(strat1, strat2, metric):
+    val1 = df[df['Strategy'] == strat1][metric].values[0]
+    val2 = df[df['Strategy'] == strat2][metric].values[0]
     
-    # Save to CSV
-    save_tasks_to_csv(tasks)
+    if metric == 'DeadlineSuccess':
+        # Higher is better
+        return (val1 / val2) * 100 if val2 != 0 else 0
+    else:
+        # Lower is better
+        return (val2 / val1) * 100 if val1 != 0 else 0
+
+# Create comparison matrix for each metric
+metrics = ['Energy', 'Latency', 'DeadlineSuccess']
+strategies = df['Strategy'].tolist()
+
+for metric in metrics:
+    print(f"\n--- {metric} Comparison Matrix (%) ---")
+    print(f"{'vs':<10}", end="")
+    for s in strategies:
+        print(f"{s:<10}", end="")
+    print()
     
-    # Print some statistics
-    task_types = [t['type'] for t in tasks]
-    print("\nTask Type Distribution:")
-    print(f"Light tasks: {task_types.count('light')} (40%)")
-    print(f"Medium tasks: {task_types.count('medium')} (40%)")
-    print(f"Heavy tasks: {task_types.count('heavy')} (20%)")
+    for s1 in strategies:
+        print(f"{s1:<10}", end="")
+        for s2 in strategies:
+            if s1 == s2:
+                print("100.0    ", end="")
+            else:
+                comparison = compare_strategies(s1, s2, metric)
+                print(f"{comparison:>6.1f}   ", end="")
+        print()
+
+# Create a combined visualization
+plt.figure(figsize=(15, 10))
+n_metrics = len(metrics)
+n_strategies = len(strategies)
+bar_width = 0.15
+index = np.arange(n_metrics)
+
+for i, strategy in enumerate(strategies):
+    values = []
+    for metric in metrics:
+        if metric == 'DeadlineSuccess':
+            # Higher is better
+            values.append(df[df['Strategy'] == strategy][metric].values[0] * 100)
+        else:
+            # Lower is better - convert to percentage of best
+            best = df[metric].min() if metric != 'DeadlineSuccess' else df[metric].max()
+            current = df[df['Strategy'] == strategy][metric].values[0]
+            if metric != 'DeadlineSuccess':
+                values.append((best / current) * 100)
+            else:
+                values.append((current / best) * 100)
     
-    # Print first 3 tasks as example
-    print("\nSample Tasks:")
-    for i, task in enumerate(tasks[:3], 1):
-        print(f"\nTask {i}:")
-        for key, value in task.items():
-            print(f"  {key}: {value}")
+    plt.bar(index + i*bar_width, values, bar_width, label=strategy)
+
+plt.xlabel('Metrics')
+plt.ylabel('Performance (% of best)')
+plt.title('Comprehensive Performance Comparison (Higher is better)')
+plt.xticks(index + bar_width*1.5, metrics)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig("images/comprehensive_comparison.png", bbox_inches='tight')
+plt.close()
+
+print("\nComprehensive comparison plot saved to images/comprehensive_comparison.png")
+
+
+# ===========================================================
+# MCDM METHODS COMPARISON VISUALIZATION
+# ===========================================================
+print("\n===== MCDM METHODS COMPARISON =====")
+
+# Prepare data for visualization
+methods = ['WSM', 'TOPSIS', 'AHP']
+scores = {
+    'Local': [df[df['Strategy'] == 'Local']['WSM_Score'].values[0],
+              df[df['Strategy'] == 'Local']['TOPSIS_Score'].values[0],
+              df[df['Strategy'] == 'Local']['AHP_Score'].values[0]],
+    'Edge': [df[df['Strategy'] == 'Edge']['WSM_Score'].values[0],
+             df[df['Strategy'] == 'Edge']['TOPSIS_Score'].values[0],
+             df[df['Strategy'] == 'Edge']['AHP_Score'].values[0]],
+    'Cloud': [df[df['Strategy'] == 'Cloud']['WSM_Score'].values[0],
+              df[df['Strategy'] == 'Cloud']['TOPSIS_Score'].values[0],
+              df[df['Strategy'] == 'Cloud']['AHP_Score'].values[0]],
+    'APEATO': [df[df['Strategy'] == 'APEATO']['WSM_Score'].values[0],
+               df[df['Strategy'] == 'APEATO']['TOPSIS_Score'].values[0],
+               df[df['Strategy'] == 'APEATO']['AHP_Score'].values[0]]
+}
+
+# Create subplots
+fig, axs = plt.subplots(1, 3, figsize=(20, 6), sharey=True)
+fig.suptitle('MCDM Methods Comparison', fontsize=16)
+
+# Plot each method
+for i, method in enumerate(methods):
+    method_scores = [scores[strategy][i] for strategy in ['Local', 'Edge', 'Cloud', 'APEATO']]
+    axs[i].bar(['Local', 'Edge', 'Cloud', 'APEATO'], method_scores, 
+              color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'])
+    axs[i].set_title(f'{method} Scores')
+    axs[i].set_ylim(0, 1.1)
+    axs[i].grid(True, axis='y', linestyle='--', alpha=0.7)
+    
+    # Add value labels
+    for j, v in enumerate(method_scores):
+        axs[i].text(j, v + 0.02, f'{v:.3f}', ha='center')
+
+# Add method descriptions
+descriptions = [
+    "• Normalizes scores\n• Weights: Energy 40%, \n  Latency 30%, \n  Deadline 30%",
+    "• Minimizes distance to ideal\n• Maximizes distance from worst\n• Considers all objectives",
+    "• Uses pairwise comparisons\n• Calculates consistency\n• Derives weights objectively"
+]
+
+for i, desc in enumerate(descriptions):
+    axs[i].text(0.5, -0.3, desc, transform=axs[i].transAxes, 
+                ha='center', va='top', fontsize=10, 
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='lightgray'))
+
+plt.tight_layout(rect=[0, 0.1, 1, 0.95])
+plt.savefig("images/mcdm_comparison.png", bbox_inches='tight', dpi=300)
+plt.close()
+
+print("MCDM methods comparison plot saved to images/mcdm_comparison.png")
+
