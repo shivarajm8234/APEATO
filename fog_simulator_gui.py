@@ -786,212 +786,7 @@ class DecisionBreakdownWidget(QWidget):
             bar_dict['count'].setText(f"{count} ({percentage*100:.1f}%)")
 
 
-# ---------------------------
-# Cost Comparison Widget (The "Good" Part)
-# ---------------------------
-# ---------------------------
-# Modern Cost Analysis Widget (Premium UI)
-# ---------------------------
-class MetricBar(QWidget):
-    def __init__(self, label, color, parent=None):
-        super().__init__(parent)
-        self.value = 0.0
-        self.max_val = 1.0
-        self.color = color
-        self.text_val = "0.00"
-        self.label = label
-        self.setFixedHeight(35)
-        
-    def set_data(self, value, max_val):
-        self.value = value
-        self.max_val = max_val if max_val > 0 else 1.0
-        self.text_val = f"{value:.3f}"
-        self.update()
-        
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Bg
-        rect = self.rect()
-        painter.setBrush(QColor(40, 45, 60))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(rect, 4, 4)
-        
-        # Bar
-        pct = min(1.0, self.value / self.max_val)
-        bar_width = int(rect.width() * pct)
-        bar_rect = QRectF(0, 0, bar_width, rect.height())
-        
-        gradient = QColor(self.color)
-        painter.setBrush(gradient)
-        painter.drawRoundedRect(bar_rect, 4, 4)
-        
-        # Text
-        painter.setPen(Qt.white)
-        painter.setFont(QFont("Segoe UI", 8))
-        painter.drawText(rect.adjusted(5,0,-5,0), Qt.AlignLeft | Qt.AlignVCenter, self.label)
-        painter.drawText(rect.adjusted(5,0,-5,0), Qt.AlignRight | Qt.AlignVCenter, self.text_val)
 
-
-class LocationCard(QWidget):
-    def __init__(self, title, color, parent=None):
-        super().__init__(parent)
-        self.setFixedWidth(140)
-        self.title = title
-        self.base_color = color
-        self.is_winner = False
-        
-        layout = QVBoxLayout(self)
-        layout.setSpacing(5)
-        layout.setContentsMargins(5, 10, 5, 10)
-        
-        # Header
-        self.header = QLabel(title)
-        self.header.setAlignment(Qt.AlignCenter)
-        self.header.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {color};")
-        layout.addWidget(self.header)
-        
-        # Bars
-        self.energy_bar = MetricBar("Energy", "#60a5fa")
-        self.latency_bar = MetricBar("Latency", "#34d399")
-        self.cost_bar = MetricBar("Cost", "#f472b6")
-        
-        layout.addWidget(self.energy_bar)
-        layout.addWidget(self.latency_bar)
-        layout.addWidget(self.cost_bar)
-        layout.addStretch()
-        
-    def update_card(self, energy, latency, cost, max_e, max_l, max_c, is_winner):
-        self.is_winner = is_winner
-        self.energy_bar.set_data(energy, max_e)
-        self.latency_bar.set_data(latency, max_l)
-        self.cost_bar.set_data(cost, max_c)
-        self.update()
-        
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        rect = self.rect()
-        
-        # Background
-        bg_color = QColor(30, 35, 45)
-        if self.is_winner:
-            bg_color = QColor(40, 50, 70)
-            
-        painter.setBrush(bg_color)
-        
-        # Border
-        if self.is_winner:
-            painter.setPen(QPen(QColor(self.base_color), 2))
-        else:
-            painter.setPen(QPen(QColor(60, 60, 70), 1))
-            
-        painter.drawRoundedRect(rect.adjusted(1,1,-1,-1), 8, 8)
-
-
-class ModernCostWidget(QGroupBox):
-    def __init__(self, parent=None):
-        super().__init__("Real-time Cost Analysis", parent)
-        self.setStyleSheet("""
-            QGroupBox {
-                background: rgba(26,31,46,200);
-                border: 1px solid #4b5563;
-                border-radius: 8px;
-                padding: 10px; 
-                margin-top: 20px;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-        
-        layout = QVBoxLayout(self)
-        
-        # Weights Indicator
-        weights_container = QWidget()
-        w_layout = QHBoxLayout(weights_container)
-        w_layout.setContentsMargins(0,0,0,10)
-        
-        self.w_energy_lbl = QLabel("Energy Priority: 50%")
-        self.w_latency_lbl = QLabel("Latency Priority: 50%")
-        
-        for lbl in [self.w_energy_lbl, self.w_latency_lbl]:
-            lbl.setStyleSheet("color: #d1d5db; font-size: 12px;")
-            
-        w_layout.addWidget(self.w_energy_lbl)
-        w_layout.addStretch()
-        w_layout.addWidget(self.w_latency_lbl)
-        
-        layout.addWidget(weights_container)
-        
-        # Cards Container
-        cards_layout = QHBoxLayout()
-        cards_layout.setSpacing(10)
-        
-        self.card_dev = LocationCard("DEVICE", "#60a5fa")
-        self.card_edge = LocationCard("EDGE", "#34d399")
-        self.card_cloud = LocationCard("CLOUD", "#f59e0b")
-        
-        cards_layout.addWidget(self.card_dev)
-        cards_layout.addWidget(self.card_edge)
-        cards_layout.addWidget(self.card_cloud)
-        
-        layout.addLayout(cards_layout)
-
-    def update_data(self, details: dict):
-        if not details: return
-        
-        energies = details.get('energies', {})
-        latencies = details.get('latencies', {})
-        costs = details.get('costs', {})
-        weights = details.get('weights', (0.5, 0.5))
-        
-        # Update weights labels
-        self.w_energy_lbl.setText(f"Energy Priority: {weights[0]*100:.0f}%")
-        self.w_latency_lbl.setText(f"Latency Priority: {weights[1]*100:.0f}%")
-        
-        # Get Max values for normalization
-        max_e = max(energies.values()) if energies else 1.0
-        max_l = max(latencies.values()) if latencies else 1.0
-        max_c = max(costs.values()) if costs else 1.0
-        
-        # Find winner
-        winner_loc = min(costs, key=costs.get)
-        
-        def get_vals(loc_enum):
-            return (
-                energies.get(loc_enum, 0.0),
-                latencies.get(loc_enum, 0.0),
-                costs.get(loc_enum, 0.0),
-                loc_enum == winner_loc
-            )
-
-        # Assuming Location Enum mapping
-        # We need to map our LocationCard to the Enum keys in the dict
-        # The dict keys are Enums. Let's find them by name string.
-        
-        loc_map = {}
-        for k in energies.keys():
-            loc_map[k.name] = k
-            
-        if 'DEVICE' in loc_map:
-            e, l, c, w = get_vals(loc_map['DEVICE'])
-            self.card_dev.update_card(e, l, c, max_e, max_l, max_c, w)
-            
-        if 'EDGE' in loc_map:
-            e, l, c, w = get_vals(loc_map['EDGE'])
-            self.card_edge.update_card(e, l, c, max_e, max_l, max_c, w)
-            
-        if 'CLOUD' in loc_map:
-            e, l, c, w = get_vals(loc_map['CLOUD'])
-            self.card_cloud.update_card(e, l, c, max_e, max_l, max_c, w)
 
 
 
@@ -1056,23 +851,23 @@ class FogSimulatorGUI(QMainWindow):
         ctrl_layout = QHBoxLayout()
         
         # Title with Emoji
-        title = QLabel("☁️ APEATO Fog Simulator")
+        title = QLabel("APEATO Fog Simulator")
         title.setStyleSheet("font-size: 24px; font-weight: bold; color: #8b5cf6;")
         ctrl_layout.addWidget(title)
         
         ctrl_layout.addSpacing(20)
         
         # Emojified Buttons
-        self.start_btn = QPushButton("▶️ Start")
+        self.start_btn = QPushButton("Start")
         self.start_btn.setStyleSheet("background: #10b981;") # Green
         
-        self.pause_btn = QPushButton("⏸️ Pause")
+        self.pause_btn = QPushButton("Pause")
         self.pause_btn.setStyleSheet("background: #f59e0b;") # Orange
         
-        self.stop_btn = QPushButton("⏹️ Stop")
+        self.stop_btn = QPushButton("Stop")
         self.stop_btn.setStyleSheet("background: #ef4444;") # Red
-        
-        self.explain_btn = QPushButton("❓ Explain Algorithm")
+    
+        self.explain_btn = QPushButton("Explain Algorithm")
         self.explain_btn.setStyleSheet("background: #6366f1;") # Indigo
         
         # Speed Combo
