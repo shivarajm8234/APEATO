@@ -9,6 +9,7 @@ import csv
 import math
 import time
 import random
+import psutil 
 from datetime import datetime
 from functools import partial
 
@@ -16,14 +17,15 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTabWidget, QGroupBox, QComboBox, QSpinBox, QDoubleSpinBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QStatusBar,
-    QMessageBox, QFormLayout, QGraphicsOpacityEffect, QScrollArea, QGridLayout
+    QMessageBox, QFormLayout, QGraphicsOpacityEffect, QScrollArea, QGridLayout,
+    QDialog, QProgressBar, QToolTip
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve,
     QRectF, QSize
 )
 from PyQt5.QtGui import (
-    QPainter, QColor, QPen, QFont, QBrush, QPalette
+    QPainter, QColor, QPen, QFont, QBrush, QPalette, QCursor
 )
 import pyqtgraph as pg
 import numpy as np
@@ -59,24 +61,44 @@ class FogSimulationThread(QThread):
         self.paused = False
         self.index = 0
         self.speed = speed
-        self.start_time = time.time()
+        self.sim_time = 0.0 # Pause-aware simulation time
 
     def run(self):
         self.running = True
         self.paused = False
+        last_real_time = time.time()
         
         while self.running and self.index < len(self.tasks):
+            current_real_time = time.time()
+            dt = current_real_time - last_real_time
+            last_real_time = current_real_time
+
             if self.paused:
                 time.sleep(0.1)
                 continue
+            
+            # Increment simulation time only if running
+            self.sim_time += dt
 
             task = self.tasks[self.index]
 
             # Build realistic SystemState
-            elapsed = time.time() - self.start_time
-            battery = max(5.0, 100.0 - (elapsed * 0.02) % 100)
-            cpu_load = min(95.0, max(5.0, 20.0 + (math.sin(elapsed / 20.0) * 30.0) + random.uniform(-5, 5)))
-            bandwidth = max(1e6, min(200e6, 30e6 + (math.cos(elapsed / 30.0) * 40e6) + random.uniform(-5e6, 5e6)))
+            try:
+                battery = psutil.sensors_battery().percent
+                is_plugged = psutil.sensors_battery().power_plugged
+            except:
+                battery = max(5.0, 100.0 - (self.sim_time * 0.02) % 100) # Fallback
+                is_plugged = False
+
+            # Use REAL CPU Load
+            try:
+                cpu_load = psutil.cpu_percent(interval=None) or 10.0
+            except:
+                cpu_load = 50.0
+
+            # Simulated Bandwidth (Hard to measure real available BW instantly)
+            bandwidth = max(1e6, min(200e6, 30e6 + (math.cos(self.sim_time / 30.0) * 40e6) + random.uniform(-5e6, 5e6)))
+            
             time_of_day = datetime.now().hour
             activity = random.choice(list(Activity))
 
@@ -99,7 +121,7 @@ class FogSimulationThread(QThread):
                 'battery': state.battery,
                 'cpu_load': state.cpu_load,
                 'bandwidth': state.bandwidth,
-                'time': time.time() - self.start_time,
+                'time': self.sim_time,
                 'activity': activity.name,
                 'decision': (loc.name if hasattr(loc, 'name') else str(loc)),
             }
@@ -110,12 +132,21 @@ class FogSimulationThread(QThread):
             base_wait = 0.8
             wait_time = base_wait / max(0.2, self.speed)
             slept = 0.0
+            
+            # Use 'while' to check paused state frequently during wait
             while self.running and slept < wait_time:
+                current_loop_time = time.time()
+                loop_dt = current_loop_time - last_real_time
+                last_real_time = current_loop_time
+                
                 if self.paused:
                     time.sleep(0.05)
+                    continue
                 else:
                     time.sleep(0.05)
                     slept += 0.05
+                    self.sim_time += 0.05 # Add wait time to sim_time
+
             self.index += 1
 
         self.finished_signal.emit()
@@ -134,70 +165,290 @@ class FogSimulationThread(QThread):
 
 
 # ---------------------------
+# Explanation Dialog
+# ---------------------------
+# ---------------------------
+# Animated Explanation Dialog
+# ---------------------------
+class AnimatedExplanationDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("APEATO Logic - Live Explanation")
+        self.setFixedSize(700, 600)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1a1f2e;
+                color: white;
+            }
+            QLabel {
+                color: #e5e7eb;
+                font-family: Segoe UI, Arial;
+            }
+        """)
+        
+        # Main Layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setSpacing(20)
+        self.layout.setContentsMargins(30, 30, 30, 30)
+        
+        # Header
+        header = QLabel("🤖 How APEATO Decides")
+        header.setStyleSheet("font-size: 24px; font-weight: bold; color: #8b5cf6;")
+        header.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(header)
+        
+        # Progress Bar
+        self.progress = QProgressBar()
+        self.progress.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #374151;
+                border-radius: 5px;
+                text-align: center;
+                background: #1f2937;
+            }
+            QProgressBar::chunk {
+                background-color: #8b5cf6;
+            }
+        """)
+        self.progress.setRange(0, 100)
+        self.layout.addWidget(self.progress)
+        
+        # Steps Container
+        self.steps_container = QWidget()
+        self.steps_layout = QVBoxLayout(self.steps_container)
+        self.steps_layout.setSpacing(15)
+        self.layout.addWidget(self.steps_container)
+        
+        self.layout.addStretch()
+        
+        # Close Button
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setStyleSheet("""
+            QPushButton {
+                background: #ef4444; color: white; border: none;
+                padding: 10px; border-radius: 6px; font-weight: bold;
+            }
+            QPushButton:hover { background: #dc2626; }
+        """)
+        self.close_btn.clicked.connect(self.accept)
+        self.layout.addWidget(self.close_btn)
+        
+        # Animation State
+        self.step = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.next_step)
+        self.timer.start(1500) # Execute step every 1.5s
+        
+    def next_step(self):
+        self.step += 1
+        val = int((self.step / 4) * 100)
+        self.progress.setValue(val)
+        
+        if self.step == 1:
+            self.add_step_card(
+                "1. 👀 Predict State",
+                "Using EWMA (Exponential Weighted Moving Average), I predict future Battery, CPU, and Bandwidth.",
+                "#3b82f6"
+            )
+        elif self.step == 2:
+            self.add_step_card(
+                "2. ⚖️ Weigh Priorities",
+                "State + User Activity = Dynamic Weights.\nLow Battery? → Maximize Energy Savings.\nGaming? → Maximize Speed.",
+                "#f59e0b"
+            )
+        elif self.step == 3:
+            self.add_step_card(
+                "3. 🧮 Compute Costs",
+                "I simulate the task on Device, Edge, and Cloud.\nCost = (wE × Energy) + (wL × Latency) + Penalty",
+                "#10b981"
+            )
+        elif self.step == 4:
+            self.add_step_card(
+                "4. ✅ Final Decision",
+                "The location with the lowest Total Cost is chosen.\nIf deadlines exist, I ensure they are met!",
+                "#8b5cf6"
+            )
+            self.timer.stop()
+            self.close_btn.setText("Close (Explanation Complete)")
+            self.close_btn.setStyleSheet("background: #10b981; color: white; padding: 10px; border-radius: 6px; font-weight: bold;")
+            
+    def add_step_card(self, title, text, color):
+        card = QWidget()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 10) # Minimal margins
+        
+        # Title
+        title_lbl = QLabel(title)
+        title_lbl.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {color};")
+        
+        # Text
+        text_lbl = QLabel(text)
+        text_lbl.setStyleSheet("font-size: 14px; color: #e5e7eb; line-height: 1.4;")
+        text_lbl.setWordWrap(True)
+        
+        card_layout.addWidget(title_lbl)
+        card_layout.addWidget(text_lbl)
+        
+        # Styling: Transparent background, just text
+        card.setStyleSheet(f"""
+            QWidget {{
+                background: transparent;
+                border-left: 3px solid {color}; 
+                padding-left: 15px;
+            }}
+        """)
+        
+        # Add to layout
+        self.steps_layout.addWidget(card)
+        
+        # Animate Fade In Slide
+        effect = QGraphicsOpacityEffect(card)
+        card.setGraphicsEffect(effect)
+        
+        self.anim = QPropertyAnimation(effect, b"opacity")
+        self.anim.setDuration(800)
+        self.anim.setStartValue(0)
+        self.anim.setEndValue(1)
+        self.anim.start()
+
+
+
+# ---------------------------
 # Task Card Widget
+# ---------------------------
+# ---------------------------
+# Task Details Dialog
+# ---------------------------
+# ---------------------------
+# Task Details Dialog (Minimalist Text-Only)
+# ---------------------------
+# ---------------------------
+# Task Details Dialog (Natural Language)
+# ---------------------------
+class TaskDetailsDialog(QDialog):
+    def __init__(self, task: TaskDataclass, decision_info: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Task #{task.task_id} Explanation")
+        self.setFixedSize(500, 400)
+        self.setStyleSheet("""
+            QDialog { background: #1a1f2e; color: #e5e7eb; }
+            QLabel { font-family: 'Segoe UI', Arial; font-size: 14px; line-height: 1.5; }
+            QPushButton {
+                background: #374151;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background: #4b5563; }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        
+        # Title
+        title = QLabel(f"Task #{task.task_id} Reprot")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; margin-bottom: 15px;")
+        layout.addWidget(title)
+        
+        # Decision Info
+        decision = decision_info.get('decision', 'UNKNOWN')
+        battery = decision_info.get('battery', 0)
+        activity = decision_info.get('activity', 'Unknown')
+        
+        desc_text = f"""
+        This is a <b>{task.priority.name} Priority</b> task carrying {task.data_size/1e6:.2f} MB of data.
+        it has a computational workload of {task.workload/1e9:.2f} Giga-Cycles and requires completion within {task.deadline:.1f} seconds.
+        <br><br>
+        <b>Algorithm Decision:</b><br>
+        APEATO selected the <b>{decision}</b> for execution.
+        <br><br>
+        <b>Context:</b><br>
+        At the time of this decision, the device battery was at {battery:.1f}% and the user was engaged in '{activity}' activity.
+        The algorithm determined that offloading to {decision} provided the optimal balance of energy savings and latency compliance under these conditions.
+        """
+        
+        lbl = QLabel(desc_text)
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(lbl)
+        
+        layout.addStretch()
+        
+        # Close
+        btn = QPushButton("Close Report")
+        btn.clicked.connect(self.accept)
+        layout.addWidget(btn)
+
+# ---------------------------
+# Task Card Widget (Minimal No-Color)
 # ---------------------------
 class TaskCard(QLabel):
     def __init__(self, task: TaskDataclass, decision_info: dict, parent=None):
         super().__init__(parent)
         self.task = task
         self.decision_info = decision_info
-        self.setFixedSize(280, 110)
+        self.setFixedSize(280, 100)
+        self.setCursor(Qt.PointingHandCursor)
         self.setup_ui()
         
     def setup_ui(self):
-        priority_colors = {
-            Priority.HIGH: '#ff6b6b',
-            Priority.MEDIUM: '#ffd93d',
-            Priority.LOW: '#6bcf7f'
-        }
-        
         decision = self.decision_info.get('decision', 'UNKNOWN')
-        location_colors = {
-            'DEVICE': '#3b82f6',
-            'EDGE': '#10b981',
-            'CLOUD': '#f59e0b'
+        
+        # Colors for locations
+        loc_colors = {
+            'DEVICE': '#60a5fa',  # Blue
+            'EDGE': '#34d399',    # Green
+            'CLOUD': '#f472b6'    # Pink
         }
         
-        # Determine location color
-        loc_color = location_colors.get('CLOUD', '#f59e0b')
-        for key in location_colors:
+        # Determine color for this decision
+        # Default to white/grey if unknown
+        text_color = '#e5e7eb'
+        for key, color in loc_colors.items():
             if key in decision.upper():
-                loc_color = location_colors[key]
+                text_color = color
                 break
         
-        priority_color = priority_colors.get(self.task.priority, '#ffd93d')
-        
-        self.setStyleSheet(f"""
-            QLabel {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {loc_color}, stop:1 rgba(30,30,40,220));
-                border: 2px solid {priority_color};
-                border-radius: 8px;
-                padding: 8px;
-                color: white;
-            }}
+        # Black/White styles only Use simple white border on hover
+        self.setStyleSheet("""
+            QLabel {
+                background: #1f2937;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                padding: 10px;
+                color: #e5e7eb;
+            }
+            QLabel:hover {
+                border: 1px solid #9ca3af; 
+                background: #283041;
+            }
         """)
         
-        # Create content
+        # Plain text content, no colored dots, BUT colored destination
         content = f"""
 <div style='font-family: Arial; font-size: 11px;'>
-    <div style='font-size: 13px; font-weight: bold; margin-bottom: 4px;'>
+    <div style='font-size: 13px; font-weight: bold; color: white; margin-bottom: 5px;'>
         Task #{self.task.task_id}
     </div>
-    <div style='margin-bottom: 3px;'>
-        <span style='color: {priority_color}; font-weight: bold;'>●</span> 
-        {self.task.priority.name} Priority
+    <div style='margin-bottom: 3px; color: #d1d5db;'>
+        Priority: {self.task.priority.name}
     </div>
-    <div style='margin-bottom: 2px;'>Workload: {self.task.workload/1e9:.2f} GC</div>
-    <div style='margin-bottom: 2px;'>Data: {self.task.data_size/1e6:.2f} MB</div>
-    <div style='margin-bottom: 2px;'>Deadline: {self.task.deadline:.1f}s</div>
-    <div style='background: rgba(0,0,0,0.4); padding: 3px; border-radius: 4px; margin-top: 4px; text-align: center; font-weight: bold;'>
-        → {decision}
+    <div style='color: #9ca3af;'>Workload: {self.task.workload/1e9:.2f} GC | Data: {self.task.data_size/1e6:.2f} MB</div>
+    <div style='margin-top: 5px; font-weight: bold; color: #f3f4f6;'>
+        ↦ Processed on <span style='color: {text_color};'>{decision}</span>
     </div>
 </div>
         """
         self.setText(content)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            dialog = TaskDetailsDialog(self.task, self.decision_info, self)
+            dialog.exec_()
 
+
+    
 
 # ---------------------------
 # Task Flow Visualization Widget
@@ -572,6 +823,21 @@ class FogSimulatorGUI(QMainWindow):
         self.start_btn = QPushButton("▶ Start")
         self.pause_btn = QPushButton("⏸ Pause")
         self.stop_btn = QPushButton("⏹ Stop")
+        self.explain_btn = QPushButton("❓ Explain Algorithm")
+        self.explain_btn.setStyleSheet("""
+            QPushButton {
+                background: #8b5cf6;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #a78bfa;
+            }
+        """)
+
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentIndex(2)
@@ -582,6 +848,7 @@ class FogSimulatorGUI(QMainWindow):
         ctrl_layout.addWidget(self.start_btn)
         ctrl_layout.addWidget(self.pause_btn)
         ctrl_layout.addWidget(self.stop_btn)
+        ctrl_layout.addWidget(self.explain_btn)
         ctrl_layout.addWidget(QLabel("Speed:"))
         ctrl_layout.addWidget(self.speed_combo)
         ctrl_layout.addStretch()
@@ -619,23 +886,67 @@ class FogSimulatorGUI(QMainWindow):
         # Plots
         pg.setConfigOptions(antialias=True)
         
+        # CPU Plot (Filled)
         self.cpu_plot = pg.PlotWidget(title="Device CPU Load (%)")
         self.cpu_plot.setBackground('#1a1f2e')
         self.cpu_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.cpu_plot.setLabel('left', 'Load', units='%')
+        self.cpu_plot.setLabel('bottom', 'Time')
+        
         self.cpu_curve = self.cpu_plot.plot(pen=pg.mkPen('#3b82f6', width=2))
+        self.cpu_fill = pg.FillBetweenItem(
+            self.cpu_curve, 
+            pg.PlotCurveItem([], [], pen=None), 
+            brush=pg.mkBrush(59, 130, 246, 50) # Blue with alpha
+        )
+        self.cpu_plot.addItem(self.cpu_fill)
+        
         self.cpu_data_x = []
         self.cpu_data_y = []
         
-        self.energy_plot = pg.PlotWidget(title="Energy Consumption (J)")
+        # Energy Plot (Modernized)
+        self.energy_plot = pg.PlotWidget(title="Energy Estimation (J)")
         self.energy_plot.setBackground('#1a1f2e')
         self.energy_plot.showGrid(x=True, y=True, alpha=0.3)
-        self.energy_curve_dev = self.energy_plot.plot(pen=pg.mkPen('#3b82f6', width=2), name='Device')
-        self.energy_curve_edge = self.energy_plot.plot(pen=pg.mkPen('#10b981', width=2), name='Edge')
-        self.energy_curve_cloud = self.energy_plot.plot(pen=pg.mkPen('#f59e0b', width=2), name='Cloud')
+        self.energy_plot.setLabel('left', 'Energy', units='J')
+        self.energy_plot.addLegend(offset=(10, 10))
+        
+        # Curves (Solid Vibrant Colors)
+        self.energy_curve_dev = self.energy_plot.plot(
+            pen=pg.mkPen('#60a5fa', width=2), name='Device'
+        )
+        self.energy_curve_edge = self.energy_plot.plot(
+            pen=pg.mkPen('#34d399', width=2), name='Edge'
+        )
+        self.energy_curve_cloud = self.energy_plot.plot(
+            pen=pg.mkPen('#f472b6', width=2), name='Cloud'
+        )
+        
+        # Fills (Subtle Glow)
+        self.energy_baseline = pg.PlotCurveItem([], [], pen=None) # Hidden baseline
+        
+        self.energy_fill_dev = pg.FillBetweenItem(
+            self.energy_curve_dev, self.energy_baseline, brush=pg.mkBrush(96, 165, 250, 40)
+        )
+        self.energy_fill_edge = pg.FillBetweenItem(
+            self.energy_curve_edge, self.energy_baseline, brush=pg.mkBrush(52, 211, 153, 40)
+        )
+        self.energy_fill_cloud = pg.FillBetweenItem(
+            self.energy_curve_cloud, self.energy_baseline, brush=pg.mkBrush(244, 114, 182, 40)
+        )
+        
+        self.energy_plot.addItem(self.energy_fill_dev)
+        self.energy_plot.addItem(self.energy_fill_edge)
+        self.energy_plot.addItem(self.energy_fill_cloud)
+        
         self.energy_x = []
         self.energy_dev = []
         self.energy_edge = []
         self.energy_cloud = []
+        
+        # Connect click events
+        self.cpu_plot.scene().sigMouseClicked.connect(self.on_cpu_clicked)
+        self.energy_plot.scene().sigMouseClicked.connect(self.on_energy_clicked)
         
         right_layout.addWidget(self.cpu_plot)
         right_layout.addWidget(self.energy_plot)
@@ -654,6 +965,7 @@ class FogSimulatorGUI(QMainWindow):
         self.start_btn.clicked.connect(self.start_simulation)
         self.pause_btn.clicked.connect(self.toggle_pause)
         self.stop_btn.clicked.connect(self.stop_simulation)
+        self.explain_btn.clicked.connect(self.show_explanation)
         self.speed_combo.currentIndexChanged.connect(self._on_speed_change)
         
         # Internal state
@@ -682,6 +994,10 @@ class FogSimulatorGUI(QMainWindow):
             print("Error loading tasks:", e)
             return []
         return tasks
+        
+    def show_explanation(self):
+        dialog = AnimatedExplanationDialog(self)
+        dialog.exec_()
         
     def start_simulation(self):
         if self.sim_thread and self.sim_thread.isRunning():
@@ -728,6 +1044,78 @@ class FogSimulatorGUI(QMainWindow):
         if self.sim_thread:
             self.sim_thread.set_speed(speed)
             
+    def on_cpu_clicked(self, event):
+        if not self.cpu_data_x:
+            return
+        
+        pos = event.scenePos()
+        if self.cpu_plot.plotItem.sceneBoundingRect().contains(pos):
+            mousePoint = self.cpu_plot.plotItem.vb.mapSceneToView(pos)
+            x_val = mousePoint.x()
+            
+            # Find closest point
+            x_arr = np.array(self.cpu_data_x)
+            idx = (np.abs(x_arr - x_val)).argmin()
+            
+            t = self.cpu_data_x[idx]
+            cpu = self.cpu_data_y[idx]
+            
+            # Determine status
+            if cpu > 80:
+                status = "<span style='color: #ef4444; font-weight: bold;'>Critical Load!</span>"
+                desc = "System is overwhelmed. Offloading is highly likely."
+            elif cpu > 50:
+                status = "<span style='color: #f59e0b; font-weight: bold;'>High Load</span>"
+                desc = "Performance impacting ranges. Offloading preferred."
+            else:
+                status = "<span style='color: #10b981; font-weight: bold;'>Normal Load</span>"
+                desc = "System is stable. Local execution is viable."
+            
+            msg = f"""
+            <div style='font-family: Arial; font-size: 13px; padding: 5px; color: black;'>
+                <b>Time: {t:.2f}s</b><br>
+                CPU Load: <b>{cpu:.1f}%</b><br>
+                Status: {status}<br>
+                <i>{desc}</i>
+            </div>
+            """
+            QToolTip.showText(QCursor.pos(), msg)
+
+    def on_energy_clicked(self, event):
+        if not self.energy_x:
+            return
+            
+        pos = event.scenePos()
+        if self.energy_plot.plotItem.sceneBoundingRect().contains(pos):
+            mousePoint = self.energy_plot.plotItem.vb.mapSceneToView(pos)
+            x_val = mousePoint.x()
+            
+            # Find closest point
+            x_arr = np.array(self.energy_x)
+            idx = (np.abs(x_arr - x_val)).argmin()
+            
+            t = self.energy_x[idx]
+            e_dev = self.energy_dev[idx]
+            e_edge = self.energy_edge[idx]
+            e_cloud = self.energy_cloud[idx]
+            
+            # Find optimal
+            energies = {'Device': e_dev, 'Edge': e_edge, 'Cloud': e_cloud}
+            best_loc = min(energies, key=energies.get)
+            
+            msg = f"""
+            <div style='font-family: Arial; font-size: 13px; padding: 5px; color: black;'>
+                <b>Time: {t:.2f}s - Energy Analysis</b><hr>
+                Device: {e_dev:.4f} J<br>
+                Edge: {e_edge:.4f} J<br>
+                Cloud: {e_cloud:.4f} J<br>
+                <br>
+                Most Efficient: <span style='color: #10b981; font-weight: bold;'>{best_loc}</span><br>
+                <i>(APEATO likely chose {best_loc} if Latency allowed)</i>
+            </div>
+            """
+            QToolTip.showText(QCursor.pos(), msg)
+
     def _on_sim_finished(self):
         self.status_bar.showMessage("Simulation completed!")
         
@@ -774,10 +1162,19 @@ class FogSimulatorGUI(QMainWindow):
         # Update plots
         if self.cpu_data_x:
             self.cpu_curve.setData(self.cpu_data_x, self.cpu_data_y)
+            # Update fill baseline (y=0)
+            self.cpu_fill.setCurves(
+                self.cpu_curve, 
+                pg.PlotCurveItem(self.cpu_data_x, [0]*len(self.cpu_data_x), pen=None)
+            )
+            
         if self.energy_x:
             self.energy_curve_dev.setData(self.energy_x, self.energy_dev)
             self.energy_curve_edge.setData(self.energy_x, self.energy_edge)
             self.energy_curve_cloud.setData(self.energy_x, self.energy_cloud)
+            
+            # Update shared baseline for fills
+            self.energy_baseline.setData(self.energy_x, [0]*len(self.energy_x))
             
         # Update badges
         self.badge_cpu.setText(f"💻 CPU: {cpu:.1f}%")
