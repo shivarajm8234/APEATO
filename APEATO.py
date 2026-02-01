@@ -273,10 +273,11 @@ class APEATOAlgorithm:
         
         return penalty
     
-    def make_decision(self, task: Task, state: SystemState) -> Location:
+    def make_decision(self, task: Task, state: SystemState) -> Tuple[Location, Dict]:
         """
         MAIN DECISION FUNCTION - FIXED VERSION
         Now properly calculates costs and picks best location
+        Returns: (optimal_location, debug_details)
         """
         # Step 1: Predict future system state
         battery_pred = self.predict_battery(state.battery)
@@ -308,6 +309,7 @@ class APEATOAlgorithm:
         
         # Use min-max normalization to prevent any location from dominating
         costs = {}
+        penalties = {}
         for loc in Location:
             # Normalize to [0, 1] range
             E_norm = (energies[loc] - E_min) / (E_max - E_min) if E_max > E_min else 0
@@ -315,6 +317,7 @@ class APEATOAlgorithm:
             
             # Calculate penalty
             penalty = self.compute_penalties(task, loc, state, energies, latencies)
+            penalties[loc] = penalty
             
             # Combined cost with weights
             costs[loc] = w_E * E_norm + w_L * L_norm + penalty
@@ -347,7 +350,13 @@ class APEATOAlgorithm:
             print(f"Costs: D={costs[Location.DEVICE]:.3f}, E={costs[Location.EDGE]:.3f}, C={costs[Location.CLOUD]:.3f}")
             print(f"Decision: {optimal_location.name}")
         
-        return optimal_location
+        return optimal_location, {
+            'energies': energies,
+            'latencies': latencies,
+            'costs': costs,
+            'weights': (w_E, w_L),
+            'penalties': penalties
+        }
     
     def discretize_state(self, state: SystemState) -> Tuple:
         """Discretize state for Q-learning"""
@@ -510,7 +519,7 @@ if __name__ == "__main__":
             activity=Activity.NORMAL
         )
         
-        decision = apeato.make_decision(task, state)
+        decision, _ = apeato.make_decision(task, state)
         result = apeato.execute_and_learn(task, state, decision)
         
         print(f"\nFinal Decision: {decision.name}")

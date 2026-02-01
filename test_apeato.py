@@ -146,7 +146,7 @@ def run_test():
 
     for task in tasks:
         state = generate_balanced_state()
-        decision = apeato.make_decision(task, state)
+        decision, _ = apeato.make_decision(task, state)
         result = apeato.execute_and_learn(task, state, decision)
 
         # Get decision name robustly

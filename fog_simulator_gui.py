@@ -138,9 +138,10 @@ class FogSimulationThread(QThread):
 
             # Get APEATO decision
             try:
-                loc = self.apeato.make_decision(task, state)
+                loc, details = self.apeato.make_decision(task, state)
             except Exception as e:
                 loc = None
+                details = {}
 
             # Prepare emit payload
             emit_state = {
@@ -150,6 +151,7 @@ class FogSimulationThread(QThread):
                 'time': self.sim_time,
                 'activity': activity.name,
                 'decision': (loc.name if hasattr(loc, 'name') else str(loc)),
+                'details': details
             }
 
             self.task_signal.emit(task, emit_state)
@@ -790,8 +792,296 @@ class DecisionBreakdownWidget(QWidget):
 
 
 # ---------------------------
+# Cost Comparison Widget (The "Good" Part)
+# ---------------------------
+# ---------------------------
+# Modern Cost Analysis Widget (Premium UI)
+# ---------------------------
+class MetricBar(QWidget):
+    def __init__(self, label, color, parent=None):
+        super().__init__(parent)
+        self.value = 0.0
+        self.max_val = 1.0
+        self.color = color
+        self.text_val = "0.00"
+        self.label = label
+        self.setFixedHeight(35)
+        
+    def set_data(self, value, max_val):
+        self.value = value
+        self.max_val = max_val if max_val > 0 else 1.0
+        self.text_val = f"{value:.3f}"
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Bg
+        rect = self.rect()
+        painter.setBrush(QColor(40, 45, 60))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(rect, 4, 4)
+        
+        # Bar
+        pct = min(1.0, self.value / self.max_val)
+        bar_width = int(rect.width() * pct)
+        bar_rect = QRectF(0, 0, bar_width, rect.height())
+        
+        gradient = QColor(self.color)
+        painter.setBrush(gradient)
+        painter.drawRoundedRect(bar_rect, 4, 4)
+        
+        # Text
+        painter.setPen(Qt.white)
+        painter.setFont(QFont("Segoe UI", 8))
+        painter.drawText(rect.adjusted(5,0,-5,0), Qt.AlignLeft | Qt.AlignVCenter, self.label)
+        painter.drawText(rect.adjusted(5,0,-5,0), Qt.AlignRight | Qt.AlignVCenter, self.text_val)
+
+
+class LocationCard(QWidget):
+    def __init__(self, title, color, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(140)
+        self.title = title
+        self.base_color = color
+        self.is_winner = False
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(5)
+        layout.setContentsMargins(5, 10, 5, 10)
+        
+        # Header
+        self.header = QLabel(title)
+        self.header.setAlignment(Qt.AlignCenter)
+        self.header.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {color};")
+        layout.addWidget(self.header)
+        
+        # Bars
+        self.energy_bar = MetricBar("⚡ Energy", "#60a5fa")
+        self.latency_bar = MetricBar("⏱ Latency", "#34d399")
+        self.cost_bar = MetricBar("💰 Cost", "#f472b6")
+        
+        layout.addWidget(self.energy_bar)
+        layout.addWidget(self.latency_bar)
+        layout.addWidget(self.cost_bar)
+        layout.addStretch()
+        
+    def update_card(self, energy, latency, cost, max_e, max_l, max_c, is_winner):
+        self.is_winner = is_winner
+        self.energy_bar.set_data(energy, max_e)
+        self.latency_bar.set_data(latency, max_l)
+        self.cost_bar.set_data(cost, max_c)
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        rect = self.rect()
+        
+        # Background
+        bg_color = QColor(30, 35, 45)
+        if self.is_winner:
+            bg_color = QColor(40, 50, 70)
+            
+        painter.setBrush(bg_color)
+        
+        # Border
+        if self.is_winner:
+            painter.setPen(QPen(QColor(self.base_color), 2))
+        else:
+            painter.setPen(QPen(QColor(60, 60, 70), 1))
+            
+        painter.drawRoundedRect(rect.adjusted(1,1,-1,-1), 8, 8)
+
+
+class ModernCostWidget(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__("Real-time Cost Analysis", parent)
+        self.setStyleSheet("""
+            QGroupBox {
+                background: rgba(26,31,46,200);
+                border: 1px solid #4b5563;
+                border-radius: 8px;
+                padding: 10px; 
+                margin-top: 20px;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        
+        # Weights Indicator
+        weights_container = QWidget()
+        w_layout = QHBoxLayout(weights_container)
+        w_layout.setContentsMargins(0,0,0,10)
+        
+        self.w_energy_lbl = QLabel("Energy Priority: 50%")
+        self.w_latency_lbl = QLabel("Latency Priority: 50%")
+        
+        for lbl in [self.w_energy_lbl, self.w_latency_lbl]:
+            lbl.setStyleSheet("color: #d1d5db; font-size: 12px;")
+            
+        w_layout.addWidget(self.w_energy_lbl)
+        w_layout.addStretch()
+        w_layout.addWidget(self.w_latency_lbl)
+        
+        layout.addWidget(weights_container)
+        
+        # Cards Container
+        cards_layout = QHBoxLayout()
+        cards_layout.setSpacing(10)
+        
+        self.card_dev = LocationCard("DEVICE", "#60a5fa")
+        self.card_edge = LocationCard("EDGE", "#34d399")
+        self.card_cloud = LocationCard("CLOUD", "#f59e0b")
+        
+        cards_layout.addWidget(self.card_dev)
+        cards_layout.addWidget(self.card_edge)
+        cards_layout.addWidget(self.card_cloud)
+        
+        layout.addLayout(cards_layout)
+
+    def update_data(self, details: dict):
+        if not details: return
+        
+        energies = details.get('energies', {})
+        latencies = details.get('latencies', {})
+        costs = details.get('costs', {})
+        weights = details.get('weights', (0.5, 0.5))
+        
+        # Update weights labels
+        self.w_energy_lbl.setText(f"⚡ Energy Priority: {weights[0]*100:.0f}%")
+        self.w_latency_lbl.setText(f"⏱ Latency Priority: {weights[1]*100:.0f}%")
+        
+        # Get Max values for normalization
+        max_e = max(energies.values()) if energies else 1.0
+        max_l = max(latencies.values()) if latencies else 1.0
+        max_c = max(costs.values()) if costs else 1.0
+        
+        # Find winner
+        winner_loc = min(costs, key=costs.get)
+        
+        def get_vals(loc_enum):
+            return (
+                energies.get(loc_enum, 0.0),
+                latencies.get(loc_enum, 0.0),
+                costs.get(loc_enum, 0.0),
+                loc_enum == winner_loc
+            )
+
+        # Assuming Location Enum mapping
+        # We need to map our LocationCard to the Enum keys in the dict
+        # The dict keys are Enums. Let's find them by name string.
+        
+        loc_map = {}
+        for k in energies.keys():
+            loc_map[k.name] = k
+            
+        if 'DEVICE' in loc_map:
+            e, l, c, w = get_vals(loc_map['DEVICE'])
+            self.card_dev.update_card(e, l, c, max_e, max_l, max_c, w)
+            
+        if 'EDGE' in loc_map:
+            e, l, c, w = get_vals(loc_map['EDGE'])
+            self.card_edge.update_card(e, l, c, max_e, max_l, max_c, w)
+            
+        if 'CLOUD' in loc_map:
+            e, l, c, w = get_vals(loc_map['CLOUD'])
+            self.card_cloud.update_card(e, l, c, max_e, max_l, max_c, w)
+
+
+
+# ---------------------------
 # Main GUI
 # ---------------------------
+# ---------------------------
+# Formula Reference Dialog
+# ---------------------------
+class FormulaDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("APEATO Mathematical Model")
+        self.setFixedSize(500, 600)
+        self.setStyleSheet("""
+            QDialog { background: #1a1f2e; color: #e5e7eb; }
+            QLabel { font-size: 13px; line-height: 1.4; }
+            h2 { color: #60a5fa; margin-top: 10px; font-size: 15px; }
+            .box { background: #1f2937; padding: 10px; border-radius: 6px; border: 1px solid #374151; }
+            .math { font-family: 'Consolas', monospace; font-weight: bold; color: #f472b6; font-size: 14px; }
+        """)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header
+        layout.addWidget(QLabel("<h2>1. The Cost Function</h2>"))
+        cost_box = QLabel("""
+        <div class='box'>
+            The algorithm minimizes the Total Cost for each location <i>i</i>:
+            <br><br>
+            <div class='math'>Cost<sub>i</sub> = w<sub>E</sub>·E'<sub>i</sub> + w<sub>L</sub>·L'<sub>i</sub> + Penalty<sub>i</sub></div>
+        </div>
+        """)
+        cost_box.setTextFormat(Qt.RichText)
+        layout.addWidget(cost_box)
+        layout.addWidget(QLabel("""
+        <ul>
+            <li><b>w<sub>E</sub>, w<sub>L</sub>:</b> Dynamic weights for Energy/Latency.</li>
+            <li><b>E'<sub>i</sub>, L'<sub>i</sub>:</b> Normalized Energy and Latency (0-1).</li>
+        </ul>
+        """))
+
+        # Energy
+        layout.addWidget(QLabel("<h2>2. Energy Consumption (E)</h2>"))
+        energy_box = QLabel("""
+        <div class='box'>
+            <b>Local:</b> E<sub>dev</sub> = P<sub>comp</sub> × (Cycles / Freq<sub>dev</sub>)<br>
+            <b>Remote:</b> E<sub>off</sub> = P<sub>tx</sub> × (Size / BW) + P<sub>idle</sub> × Latency
+        </div>
+        """)
+        energy_box.setTextFormat(Qt.RichText)
+        layout.addWidget(energy_box)
+
+        # Latency
+        layout.addWidget(QLabel("<h2>3. Latency (L)</h2>"))
+        latency_box = QLabel("""
+        <div class='box'>
+            <b>Local:</b> T<sub>local</sub> = Workload / Freq<sub>dev</sub><br>
+            <b>Remote:</b> T<sub>remote</sub> = T<sub>upload</sub> + T<sub>exec</sub> + T<sub>download</sub> + RTT
+        </div>
+        """)
+        latency_box.setTextFormat(Qt.RichText)
+        layout.addWidget(latency_box)
+        
+        # Weights
+        layout.addWidget(QLabel("<h2>4. Dynamic Weights</h2>"))
+        weight_box = QLabel("""
+        <div class='box'>
+            Values change based on context:<br>
+            <div class='math'>w<sub>E</sub> = f(Battery, Activity, Time)</div>
+            <br>
+            <i>Low Battery</i> ➔ Higher <b>w<sub>E</sub></b> (Save Energy)<br>
+            <i>Gaming</i> ➔ Higher <b>w<sub>L</sub></b> (Prioritize Speed)
+        </div>
+        """)
+        weight_box.setTextFormat(Qt.RichText)
+        layout.addWidget(weight_box)
+
+        layout.addStretch()
+        
+        btn = QPushButton("Close")
+        btn.setStyleSheet("background: #374151; color: white; padding: 8px; border: none; font-weight: bold;")
+        btn.clicked.connect(self.accept)
+        layout.addWidget(btn)
+
 class FogSimulatorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -875,6 +1165,9 @@ class FogSimulatorGUI(QMainWindow):
         ctrl_layout.addWidget(self.pause_btn)
         ctrl_layout.addWidget(self.stop_btn)
         ctrl_layout.addWidget(self.explain_btn)
+        self.formula_btn = QPushButton("📐 Formulas") # New Button
+        self.formula_btn.setStyleSheet("background: #8b5cf6;") 
+        ctrl_layout.addWidget(self.formula_btn)
         ctrl_layout.addWidget(QLabel("Speed:"))
         ctrl_layout.addWidget(self.speed_combo)
         ctrl_layout.addStretch()
@@ -908,6 +1201,10 @@ class FogSimulatorGUI(QMainWindow):
         # Decision breakdown
         self.decision_breakdown = DecisionBreakdownWidget()
         right_layout.addWidget(self.decision_breakdown)
+        
+        # Cost widget removed as per user request
+        # self.cost_widget = ModernCostWidget()
+        # right_layout.addWidget(self.cost_widget)
         
         # Plots
         pg.setConfigOptions(antialias=True)
@@ -993,9 +1290,14 @@ class FogSimulatorGUI(QMainWindow):
         self.stop_btn.clicked.connect(self.stop_simulation)
         self.explain_btn.clicked.connect(self.show_explanation)
         self.speed_combo.currentIndexChanged.connect(self._on_speed_change)
+        self.formula_btn.clicked.connect(self.show_formulas)
         
         # Internal state
         self.sim_thread = None
+
+    def show_formulas(self):
+        dialog = FormulaDialog(self)
+        dialog.exec_()
         
     def _load_tasks_from_csv(self, filename):
         if not os.path.exists(filename):
@@ -1155,6 +1457,9 @@ class FogSimulatorGUI(QMainWindow):
         
         # Update metrics
         self._record_metrics(state, task)
+        
+        # Update cost widget
+        # self.cost_widget.update_data(state.get('details', {}))
         
     def _record_metrics(self, state: dict, task: TaskDataclass):
         t = state.get('time', time.time())
