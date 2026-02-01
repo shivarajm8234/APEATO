@@ -1,0 +1,338 @@
+{
+  "statistics": {
+    "simulation_time": 15.920760231385415,
+    "total_tasks": 10,
+    "task_distribution": {
+      "device": 0,
+      "edge": 0,
+      "cloud": 10
+    },
+    "energy": {
+      "total_joules": 29.83194880580682,
+      "average_per_task": 2.9831948805806823,
+      "battery_consumed_percent": 0.0552443496403896
+    },
+    "latency": {
+      "total_seconds": 15.920760231385417,
+      "average_per_task": 1.5920760231385418
+    },
+    "deadline_performance": {
+      "total_met": 9,
+      "total_missed": 1,
+      "success_rate_percent": 90.0
+    },
+    "device_status": {
+      "node_id": "device_0",
+      "type": "device",
+      "load": 0.0,
+      "tasks_in_queue": 0,
+      "tasks_executed": 0,
+      "total_energy": 29.831948805806817,
+      "battery_level": 99.94475565035961,
+      "battery_consumed": 0.0552443496403896
+    },
+    "edge_status": {
+      "node_id": "edge_0",
+      "type": "edge",
+      "load": 0.0,
+      "tasks_in_queue": 0,
+      "tasks_executed": 0,
+      "total_energy": 0.0
+    },
+    "cloud_status": {
+      "node_id": "cloud_0",
+      "type": "cloud",
+      "load": 0,
+      "tasks_in_queue": 0,
+      "tasks_executed": 10,
+      "total_energy": 1254.7858284820065
+    },
+    "network_statistics": {
+      "total_data_transmitted_mb": 114.58439760465383,
+      "total_transmission_time": 13.411188574421404,
+      "total_transmission_energy": 26.822377148842808
+    }
+  },
+  "execution_log": [
+    {
+      "time": 1.7155486205986021,
+      "task": {
+        "task_id": 1,
+        "input_size": 11.92709577295836,
+        "output_size": 0.7947996825114484,
+        "cpu_cycles": 2775.0245620376872,
+        "deadline": 4.4223726046906835,
+        "priority": "high",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 1,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 3.3323460130953197,
+        "latency": 1.7155486205986021,
+        "start_time": 0.0,
+        "end_time": 1.7155486205986021,
+        "deadline_met": true,
+        "network_delay": 1.5667973924967178,
+        "computation_time": 0.13875122810188437
+      },
+      "device_battery": 99.99382898886464,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 2.8655700353400992,
+      "task": {
+        "task_id": 2,
+        "input_size": 5.929929033401936,
+        "output_size": 1.0500488095639828,
+        "cpu_cycles": 5984.837384020662,
+        "deadline": 2.0586145836477945,
+        "priority": "medium",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 2,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 2.040800960281961,
+        "latency": 1.150021414741497,
+        "start_time": 1.7155486205986021,
+        "end_time": 2.8655700353400992,
+        "deadline_met": true,
+        "network_delay": 0.840779545540464,
+        "computation_time": 0.29924186920103313
+      },
+      "device_battery": 99.99004972782707,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 4.591274551500328,
+      "task": {
+        "task_id": 3,
+        "input_size": 12.965492026618106,
+        "output_size": 0.5704189015960885,
+        "cpu_cycles": 3554.2770581477016,
+        "deadline": 4.410614306469649,
+        "priority": "medium",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 3,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 3.3136951794130733,
+        "latency": 1.7257045161602294,
+        "start_time": 2.8655700353400992,
+        "end_time": 4.591274551500328,
+        "deadline_met": true,
+        "network_delay": 1.5379906632528442,
+        "computation_time": 0.1777138529073851
+      },
+      "device_battery": 99.9839132552726,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 6.543290841227098,
+      "task": {
+        "task_id": 4,
+        "input_size": 11.684857265307095,
+        "output_size": 1.673132003028504,
+        "cpu_cycles": 7460.260239980115,
+        "deadline": 1.9483869762345014,
+        "priority": "high",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 4,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 3.5710195674545315,
+        "latency": 1.9520162897267688,
+        "start_time": 4.591274551500328,
+        "end_time": 6.543290841227098,
+        "deadline_met": false,
+        "network_delay": 1.569003277727763,
+        "computation_time": 0.3730130119990058
+      },
+      "device_battery": 99.97730025607362,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 8.156761855158878,
+      "task": {
+        "task_id": 5,
+        "input_size": 9.494694425427191,
+        "output_size": 1.5955065423127905,
+        "cpu_cycles": 6797.729521862869,
+        "deadline": 3.436352266896341,
+        "priority": "medium",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 5,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 2.9270555517704184,
+        "latency": 1.613471013931781,
+        "start_time": 6.543290841227098,
+        "end_time": 8.156761855158878,
+        "deadline_met": true,
+        "network_delay": 1.2635845378386374,
+        "computation_time": 0.33988647609314343
+      },
+      "device_battery": 99.9718797828296,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 9.25697643780101,
+      "task": {
+        "task_id": 6,
+        "input_size": 6.605701120988197,
+        "output_size": 1.6095646151852137,
+        "cpu_cycles": 2561.2381296276358,
+        "deadline": 1.8155711509361705,
+        "priority": "high",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 6,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 2.11236725880288,
+        "latency": 1.1002145826421308,
+        "start_time": 8.156761855158878,
+        "end_time": 9.25697643780101,
+        "deadline_met": true,
+        "network_delay": 0.9621526761607491,
+        "computation_time": 0.1280619064813818
+      },
+      "device_battery": 99.9679679916096,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 10.728694659962029,
+      "task": {
+        "task_id": 7,
+        "input_size": 8.88299723226391,
+        "output_size": 0.5535298207724335,
+        "cpu_cycles": 6800.681119442569,
+        "deadline": 3.3004737277893734,
+        "priority": "low",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 7,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 2.643402388349912,
+        "latency": 1.47171822216102,
+        "start_time": 9.25697643780101,
+        "end_time": 10.728694659962029,
+        "deadline_met": true,
+        "network_delay": 1.1216841661888917,
+        "computation_time": 0.34003405597212844
+      },
+      "device_battery": 99.96307280200153,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 12.779148621846756,
+      "task": {
+        "task_id": 8,
+        "input_size": 12.756320604174528,
+        "output_size": 1.6877378825194183,
+        "cpu_cycles": 7268.930293860409,
+        "deadline": 2.1856061255613164,
+        "priority": "high",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 8,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 3.777461409076435,
+        "latency": 2.0504539618847275,
+        "start_time": 10.728694659962029,
+        "end_time": 12.779148621846756,
+        "deadline_met": true,
+        "network_delay": 1.6770074471917074,
+        "computation_time": 0.3634465146930204
+      },
+      "device_battery": 99.95607750309584,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 14.08188309174052,
+      "task": {
+        "task_id": 9,
+        "input_size": 8.077477296995358,
+        "output_size": 1.3463179237281233,
+        "cpu_cycles": 2684.8331759193698,
+        "deadline": 1.8173938219572543,
+        "priority": "medium",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 9,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 2.5112272809915597,
+        "latency": 1.3027344698937642,
+        "start_time": 12.779148621846756,
+        "end_time": 14.08188309174052,
+        "deadline_met": true,
+        "network_delay": 1.1584928110977957,
+        "computation_time": 0.1342416587959685
+      },
+      "device_battery": 99.95142708220511,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    },
+    {
+      "time": 15.920760231385415,
+      "task": {
+        "task_id": 10,
+        "input_size": 13.481610815060852,
+        "output_size": 1.897165830240313,
+        "cpu_cycles": 2303.6216543812384,
+        "deadline": 2.1731391114626435,
+        "priority": "medium",
+        "arrival_time": 0.0
+      },
+      "result": {
+        "task_id": 10,
+        "location": "cloud",
+        "status": "completed",
+        "energy_consumed": 3.602573196570729,
+        "latency": 1.8388771396448955,
+        "start_time": 14.08188309174052,
+        "end_time": 15.920760231385415,
+        "deadline_met": true,
+        "network_delay": 1.7136960569258335,
+        "computation_time": 0.11518108271906193
+      },
+      "device_battery": 99.94475565035961,
+      "device_load": 0.0,
+      "edge_load": 0.0,
+      "cloud_load": 0
+    }
+  ]
+}

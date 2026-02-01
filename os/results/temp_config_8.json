@@ -1,0 +1,6 @@
+{
+  "cloud_cpu_multiplier": 1.0,
+  "network_delay_ms": 10,
+  "edge_cpu_multiplier": 2.0,
+  "random_seed": 3
+}
