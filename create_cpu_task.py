@@ -4,47 +4,84 @@ import csv
 from datetime import datetime
 import numpy as np
 
+def get_cpu_speed():
+    """Get CPU frequency in Hz. Fallback to 2.5GHz if detection fails."""
+    try:
+        freq = psutil.cpu_freq()
+        if freq:
+            return freq.max * 1_000_000  # Convert MHz to Hz
+    except:
+        pass
+    return 2.5e9  # Fallback: 2.5 GHz
+
+# Global CPU speed for calibration
+CPU_CYCLES_PER_SEC = get_cpu_speed()
+print(f"Detected CPU Calibration Speed: {CPU_CYCLES_PER_SEC/1e9:.2f} GHz")
+
 def generate_task(task_id, task_type):
-    """Generate a task of specific type with realistic parameters"""
-    # Base parameters for different task types
-    task_types = {
-        'light': {
-            'workload_range': (1e6, 1e8),      # 1M to 100M cycles
-            'data_size_range': (1e3, 1e5),     # 1KB to 100KB
-            'result_ratio': 0.1,               # 10% of data size
-            'deadline_range': (0.1, 0.5),      # 0.1 to 0.5 seconds
-            'priority_weights': [0.2, 0.6, 0.2]  # 20% low, 60% medium, 20% high
-        },
-        'medium': {
-            'workload_range': (1e8, 5e9),      # 100M to 5B cycles
-            'data_size_range': (1e5, 5e6),     # 100KB to 5MB
-            'result_ratio': 0.2,               # 20% of data size
-            'deadline_range': (0.5, 2.0),      # 0.5 to 2 seconds
-            'priority_weights': [0.1, 0.5, 0.4]  # 10% low, 50% medium, 40% high
-        },
-        'heavy': {
-            'workload_range': (5e9, 20e9),     # 5B to 20B cycles
-            'data_size_range': (5e6, 50e6),    # 5MB to 50MB
-            'result_ratio': 0.3,               # 30% of data size
-            'deadline_range': (1.0, 5.0),      # 1 to 5 seconds
-            'priority_weights': [0.05, 0.3, 0.65]  # 5% low, 30% medium, 65% high
-        }
+    """Generate a task of specific type with realistic parameters based on current hardware"""
+    
+    # Define deadlines first (seconds)
+    # Light: fast response (100ms - 500ms)
+    # Medium: interactive (500ms - 2s)
+    # Heavy: batch processing (1s - 5s)
+    deadline_ranges = {
+        'light': (0.1, 0.5),
+        'medium': (0.5, 2.0),
+        'heavy': (1.0, 5.0)
+    }
+
+    deadline_range = deadline_ranges[task_type]
+    deadline = random.uniform(*deadline_range)
+
+    # Calculate max possible cycles this specific laptop can do in that deadline
+    max_cycles = deadline * CPU_CYCLES_PER_SEC
+
+    # Task Difficulty Factors (percentage of max utilization)
+    # Light: Uses 1% - 10% of CPU time within deadline
+    # Medium: Uses 30% - 70% of CPU time within deadline
+    # Heavy: Uses 60% - 110% of CPU time (some might miss deadline on purpose!)
+    difficulty_profiles = {
+        'light': (0.01, 0.10),
+        'medium': (0.30, 0.70),
+        'heavy': (0.60, 1.10)
+    }
+
+    diff_min, diff_max = difficulty_profiles[task_type]
+    utilization = random.uniform(diff_min, diff_max)
+    workload = max_cycles * utilization
+
+    # Data sizes (RAM/Network usage)
+    # Light: 1KB - 100KB
+    # Medium: 100KB - 5MB
+    # Heavy: 5MB - 50MB
+    data_size_ranges = {
+        'light': (1e3, 1e5),
+        'medium': (1e5, 5e6),
+        'heavy': (5e6, 50e6)
     }
     
-    params = task_types[task_type]
+    params_data = data_size_ranges[task_type]
+    data_size = random.uniform(*params_data)
+
+    # Result ratio (output size relative to input)
+    result_ratios = {
+        'light': 0.1,
+        'medium': 0.2,
+        'heavy': 0.3
+    }
+    result_size = data_size * result_ratios[task_type] * random.uniform(0.8, 1.2)
+
+    # Priority Weights
+    priority_weights = {
+        'light': [0.2, 0.6, 0.2],    # Mostly Medium
+        'medium': [0.1, 0.5, 0.4],   # Medium/High
+        'heavy': [0.05, 0.3, 0.65]   # Mostly High
+    }
     
-    # Generate task parameters
-    workload = random.uniform(*params['workload_range'])
-    data_size = random.uniform(*params['data_size_range'])
-    result_size = data_size * params['result_ratio'] * random.uniform(0.8, 1.2)
-    priority = random.choices([0, 1, 2], weights=params['priority_weights'], k=1)[0]
-    deadline = random.uniform(*params['deadline_range'])
+    priority = random.choices([0, 1, 2], weights=priority_weights[task_type], k=1)[0]
     
-    # Add some noise to make it more realistic
-    workload *= random.uniform(0.9, 1.1)
-    data_size = max(1, data_size * random.uniform(0.9, 1.1))
-    result_size = max(1, result_size * random.uniform(0.9, 1.1))
-    
+    # Output
     return {
         'task_id': task_id,
         'workload': round(workload, 2),
