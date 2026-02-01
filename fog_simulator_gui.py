@@ -1,8 +1,3 @@
-# fog_ui_enhanced.py
-# Enhanced Fog Simulator UI with Task Flow Visualization
-# Requirements: PyQt5, pyqtgraph, numpy
-# Usage: python3 fog_ui_enhanced.py
-
 import sys
 import os
 import csv
@@ -220,7 +215,7 @@ class AnimatedExplanationDialog(QDialog):
         self.layout.setContentsMargins(30, 30, 30, 30)
         
         # Header
-        header = QLabel("🤖 How APEATO Decides")
+        header = QLabel("How APEATO Decides")
         header.setStyleSheet("font-size: 24px; font-weight: bold; color: #8b5cf6;")
         header.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(header)
@@ -274,25 +269,25 @@ class AnimatedExplanationDialog(QDialog):
         
         if self.step == 1:
             self.add_step_card(
-                "1. 👀 Predict State",
+                "1. Predict State",
                 "Using EWMA (Exponential Weighted Moving Average), I predict future Battery, CPU, and Bandwidth.",
                 "#3b82f6"
             )
         elif self.step == 2:
             self.add_step_card(
-                "2. ⚖️ Weigh Priorities",
-                "State + User Activity = Dynamic Weights.\nLow Battery? → Maximize Energy Savings.\nGaming? → Maximize Speed.",
+                "2. Weigh Priorities",
+                "State + User Activity = Dynamic Weights.\nLow Battery? -> Maximize Energy Savings.\nGaming? -> Maximize Speed.",
                 "#f59e0b"
             )
         elif self.step == 3:
             self.add_step_card(
-                "3. 🧮 Compute Costs",
-                "I simulate the task on Device, Edge, and Cloud.\nCost = (wE × Energy) + (wL × Latency) + Penalty",
+                "3. Compute Costs",
+                "I simulate the task on Device, Edge, and Cloud.\nCost = (wE x Energy) + (wL x Latency) + Penalty",
                 "#10b981"
             )
         elif self.step == 4:
             self.add_step_card(
-                "4. ✅ Final Decision",
+                "4. Final Decision",
                 "The location with the lowest Total Cost is chosen.\nIf deadlines exist, I ensure they are met!",
                 "#8b5cf6"
             )
@@ -531,7 +526,7 @@ class TaskFlowWidget(QWidget):
         flow_layout = QHBoxLayout()
         
         # Queued column
-        queued_group = QGroupBox("📥 Queued Tasks")
+        queued_group = QGroupBox("Queued Tasks")
         queued_group.setStyleSheet("""
             QGroupBox {
                 background: rgba(30,35,45,220);
@@ -559,7 +554,7 @@ class TaskFlowWidget(QWidget):
         queued_group.setLayout(queued_layout)
         
         # Processing column
-        processing_group = QGroupBox("⚙️ Processing Tasks")
+        processing_group = QGroupBox("Processing Tasks")
         processing_group.setStyleSheet("""
             QGroupBox {
                 background: rgba(30,35,45,220);
@@ -587,7 +582,7 @@ class TaskFlowWidget(QWidget):
         processing_group.setLayout(processing_layout)
         
         # Completed column
-        completed_group = QGroupBox("✅ Completed Tasks")
+        completed_group = QGroupBox("Completed Tasks")
         completed_group.setStyleSheet("""
             QGroupBox {
                 background: rgba(30,35,45,220);
@@ -858,9 +853,9 @@ class LocationCard(QWidget):
         layout.addWidget(self.header)
         
         # Bars
-        self.energy_bar = MetricBar("⚡ Energy", "#60a5fa")
-        self.latency_bar = MetricBar("⏱ Latency", "#34d399")
-        self.cost_bar = MetricBar("💰 Cost", "#f472b6")
+        self.energy_bar = MetricBar("Energy", "#60a5fa")
+        self.latency_bar = MetricBar("Latency", "#34d399")
+        self.cost_bar = MetricBar("Cost", "#f472b6")
         
         layout.addWidget(self.energy_bar)
         layout.addWidget(self.latency_bar)
@@ -959,8 +954,8 @@ class ModernCostWidget(QGroupBox):
         weights = details.get('weights', (0.5, 0.5))
         
         # Update weights labels
-        self.w_energy_lbl.setText(f"⚡ Energy Priority: {weights[0]*100:.0f}%")
-        self.w_latency_lbl.setText(f"⏱ Latency Priority: {weights[1]*100:.0f}%")
+        self.w_energy_lbl.setText(f"Energy Priority: {weights[0]*100:.0f}%")
+        self.w_latency_lbl.setText(f"Latency Priority: {weights[1]*100:.0f}%")
         
         # Get Max values for normalization
         max_e = max(energies.values()) if energies else 1.0
@@ -1004,84 +999,8 @@ class ModernCostWidget(QGroupBox):
 # Main GUI
 # ---------------------------
 # ---------------------------
-# Formula Reference Dialog
+# Main GUI
 # ---------------------------
-class FormulaDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("APEATO Mathematical Model")
-        self.setFixedSize(500, 600)
-        self.setStyleSheet("""
-            QDialog { background: #1a1f2e; color: #e5e7eb; }
-            QLabel { font-size: 13px; line-height: 1.4; }
-            h2 { color: #60a5fa; margin-top: 10px; font-size: 15px; }
-            .box { background: #1f2937; padding: 10px; border-radius: 6px; border: 1px solid #374151; }
-            .math { font-family: 'Consolas', monospace; font-weight: bold; color: #f472b6; font-size: 14px; }
-        """)
-        
-        layout = QVBoxLayout(self)
-        
-        # Header
-        layout.addWidget(QLabel("<h2>1. The Cost Function</h2>"))
-        cost_box = QLabel("""
-        <div class='box'>
-            The algorithm minimizes the Total Cost for each location <i>i</i>:
-            <br><br>
-            <div class='math'>Cost<sub>i</sub> = w<sub>E</sub>·E'<sub>i</sub> + w<sub>L</sub>·L'<sub>i</sub> + Penalty<sub>i</sub></div>
-        </div>
-        """)
-        cost_box.setTextFormat(Qt.RichText)
-        layout.addWidget(cost_box)
-        layout.addWidget(QLabel("""
-        <ul>
-            <li><b>w<sub>E</sub>, w<sub>L</sub>:</b> Dynamic weights for Energy/Latency.</li>
-            <li><b>E'<sub>i</sub>, L'<sub>i</sub>:</b> Normalized Energy and Latency (0-1).</li>
-        </ul>
-        """))
-
-        # Energy
-        layout.addWidget(QLabel("<h2>2. Energy Consumption (E)</h2>"))
-        energy_box = QLabel("""
-        <div class='box'>
-            <b>Local:</b> E<sub>dev</sub> = P<sub>comp</sub> × (Cycles / Freq<sub>dev</sub>)<br>
-            <b>Remote:</b> E<sub>off</sub> = P<sub>tx</sub> × (Size / BW) + P<sub>idle</sub> × Latency
-        </div>
-        """)
-        energy_box.setTextFormat(Qt.RichText)
-        layout.addWidget(energy_box)
-
-        # Latency
-        layout.addWidget(QLabel("<h2>3. Latency (L)</h2>"))
-        latency_box = QLabel("""
-        <div class='box'>
-            <b>Local:</b> T<sub>local</sub> = Workload / Freq<sub>dev</sub><br>
-            <b>Remote:</b> T<sub>remote</sub> = T<sub>upload</sub> + T<sub>exec</sub> + T<sub>download</sub> + RTT
-        </div>
-        """)
-        latency_box.setTextFormat(Qt.RichText)
-        layout.addWidget(latency_box)
-        
-        # Weights
-        layout.addWidget(QLabel("<h2>4. Dynamic Weights</h2>"))
-        weight_box = QLabel("""
-        <div class='box'>
-            Values change based on context:<br>
-            <div class='math'>w<sub>E</sub> = f(Battery, Activity, Time)</div>
-            <br>
-            <i>Low Battery</i> ➔ Higher <b>w<sub>E</sub></b> (Save Energy)<br>
-            <i>Gaming</i> ➔ Higher <b>w<sub>L</sub></b> (Prioritize Speed)
-        </div>
-        """)
-        weight_box.setTextFormat(Qt.RichText)
-        layout.addWidget(weight_box)
-
-        layout.addStretch()
-        
-        btn = QPushButton("Close")
-        btn.setStyleSheet("background: #374151; color: white; padding: 8px; border: none; font-weight: bold;")
-        btn.clicked.connect(self.accept)
-        layout.addWidget(btn)
-
 class FogSimulatorGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1136,46 +1055,46 @@ class FogSimulatorGUI(QMainWindow):
         # Top controls
         ctrl_layout = QHBoxLayout()
         
-        self.start_btn = QPushButton("▶ Start")
-        self.pause_btn = QPushButton("⏸ Pause")
-        self.stop_btn = QPushButton("⏹ Stop")
+        # Title with Emoji
+        title = QLabel("☁️ APEATO Fog Simulator")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #8b5cf6;")
+        ctrl_layout.addWidget(title)
+        
+        ctrl_layout.addSpacing(20)
+        
+        # Emojified Buttons
+        self.start_btn = QPushButton("▶️ Start")
+        self.start_btn.setStyleSheet("background: #10b981;") # Green
+        
+        self.pause_btn = QPushButton("⏸️ Pause")
+        self.pause_btn.setStyleSheet("background: #f59e0b;") # Orange
+        
+        self.stop_btn = QPushButton("⏹️ Stop")
+        self.stop_btn.setStyleSheet("background: #ef4444;") # Red
+        
         self.explain_btn = QPushButton("❓ Explain Algorithm")
-        self.explain_btn.setStyleSheet("""
-            QPushButton {
-                background: #8b5cf6;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #a78bfa;
-            }
-        """)
-
+        self.explain_btn.setStyleSheet("background: #6366f1;") # Indigo
+        
+        # Speed Combo
         self.speed_combo = QComboBox()
         self.speed_combo.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.speed_combo.setCurrentIndex(2)
         
-        for btn in [self.start_btn, self.pause_btn, self.stop_btn]:
-            btn.setMinimumWidth(100)
-            
+        # Add to layout
         ctrl_layout.addWidget(self.start_btn)
         ctrl_layout.addWidget(self.pause_btn)
         ctrl_layout.addWidget(self.stop_btn)
         ctrl_layout.addWidget(self.explain_btn)
-        self.formula_btn = QPushButton("📐 Formulas") # New Button
-        self.formula_btn.setStyleSheet("background: #8b5cf6;") 
-        ctrl_layout.addWidget(self.formula_btn)
-        ctrl_layout.addWidget(QLabel("Speed:"))
+        
+        ctrl_layout.addWidget(QLabel("⚡ Speed:"))
         ctrl_layout.addWidget(self.speed_combo)
+        
         ctrl_layout.addStretch()
         
         # System metrics badges
-        self.badge_battery = QLabel("🔋 Battery: 100%")
-        self.badge_cpu = QLabel("💻 CPU: 0%")
-        self.badge_bw = QLabel("📡 BW: 0 Mbps")
+        self.badge_battery = QLabel("Battery: 100%")
+        self.badge_cpu = QLabel("CPU: 0%")
+        self.badge_bw = QLabel("BW: 0 Mbps")
         for badge in [self.badge_battery, self.badge_cpu, self.badge_bw]:
             badge.setStyleSheet("""
                 background: rgba(60,70,90,200);
@@ -1290,14 +1209,9 @@ class FogSimulatorGUI(QMainWindow):
         self.stop_btn.clicked.connect(self.stop_simulation)
         self.explain_btn.clicked.connect(self.show_explanation)
         self.speed_combo.currentIndexChanged.connect(self._on_speed_change)
-        self.formula_btn.clicked.connect(self.show_formulas)
         
         # Internal state
         self.sim_thread = None
-
-    def show_formulas(self):
-        dialog = FormulaDialog(self)
-        dialog.exec_()
         
     def _load_tasks_from_csv(self, filename):
         if not os.path.exists(filename):
@@ -1508,10 +1422,10 @@ class FogSimulatorGUI(QMainWindow):
             self.energy_baseline.setData(self.energy_x, [0]*len(self.energy_x))
             
         # Update badges
-        self.badge_cpu.setText(f"💻 CPU: {cpu:.1f}%")
-        self.badge_bw.setText(f"📡 BW: {bw_mbps:.1f} Mbps")
+        self.badge_cpu.setText(f"CPU: {cpu:.1f}%")
+        self.badge_bw.setText(f"BW: {bw_mbps:.1f} Mbps")
         battery = state.get('battery', 100.0)
-        self.badge_battery.setText(f"🔋 Battery: {battery:.1f}%")
+        self.badge_battery.setText(f"Battery: {battery:.1f}%")
         
     def closeEvent(self, event):
         if self.sim_thread and self.sim_thread.isRunning():
