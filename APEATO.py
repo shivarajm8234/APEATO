@@ -1,4 +1,5 @@
 import numpy as np
+import json
 import math
 from collections import deque
 from typing import Dict, Tuple, List, Optional
@@ -40,6 +41,8 @@ class SystemState:
 
 class APEATOAlgorithm:
     def __init__(self):
+        # ... (keep existing init code, but add this line)
+        self.task_history_log = [] 
         # Device parameters
         self.P_comp_D = 10.0  # W
         self.P_idle_D = 1.0  # W
@@ -110,6 +113,7 @@ class APEATOAlgorithm:
         # Network reliability
         self.R_E = 0.95
         self.R_C = 0.90
+    
     
     def battery_influence(self, battery: float) -> float:
         """Calculate battery influence β(t)"""
@@ -431,9 +435,9 @@ class APEATOAlgorithm:
             reward += self.gamma_reward
         
         return reward
-    
+
     def execute_and_learn(self, task: Task, state: SystemState, 
-                         location: Location) -> Dict:
+                          location: Location) -> Dict:
         """Execute task and update learning models"""
         # Simulate execution
         if location == Location.DEVICE:
@@ -473,6 +477,18 @@ class APEATOAlgorithm:
             'state': state
         })
         
+        # Log to task history for JSON
+        self.task_history_log.append({
+            "task_id": task.task_id,
+            "task_name": f"Task_{task.task_id}",
+            "decision": location.name,
+            "energy": round(E_actual, 4),
+            "latency": round(L_actual, 4),
+            "reward": round(reward, 4),
+            "state_snapshot": str(current_state),
+            "action_taken": str(action)
+        })
+        
         return {
             'location': location,
             'energy': E_actual,
@@ -480,6 +496,61 @@ class APEATOAlgorithm:
             'reward': reward,
             'optimal': abs(E_actual - E_optimal) < 0.1 * E_optimal
         }
+    
+    def get_q_table_as_json(self):
+        """Convert Q-table and Task History to JSON-serializable format"""
+        # Convert tuple keys to string representation for Q-table
+        q_table_json = {}
+        for state, actions in self.Q_table.items():
+            state_key = str(state)
+            actions_str_keys = {str(k): v for k, v in actions.items()}
+            q_table_json[state_key] = actions_str_keys
+            
+        return {
+            "q_table": q_table_json,
+            "task_history": self.task_history_log
+        }
+
+    def save_q_table(self, filename='q_table.json'):
+        """Save Q-table and History to JSON file"""
+        data = self.get_q_table_as_json()
+        try:
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving Q-Table: {e}")
+
+    def load_q_table(self, filename='q_table.json'):
+        """Load Q-table from JSON file"""
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            
+            # Check if it's the new structure
+            if "q_table" in data:
+                raw_q_table = data["q_table"]
+                self.task_history_log = data.get("task_history", [])
+            else:
+                # Old format fallback
+                raw_q_table = data
+                self.task_history_log = []
+
+            # Reconstruct dictionary with proper types
+            self.Q_table = {}
+            for state_str, actions in raw_q_table.items():
+                state_tuple = tuple(map(int, state_str.strip('()').split(',')))
+                
+                actions_typed = {}
+                for act_str, score in actions.items():
+                    act_tuple = tuple(map(float, act_str.strip('()').split(',')))
+                    actions_typed[act_tuple] = score
+                    
+                self.Q_table[state_tuple] = actions_typed
+            print(f"Q-Table values loaded. History length: {len(self.task_history_log)}")
+        except FileNotFoundError:
+            print("No existing Q-table found, starting fresh.")
+        except Exception as e:
+            print(f"Error loading Q-Table: {e}")
 
 # Example usage
 if __name__ == "__main__":
@@ -497,32 +568,27 @@ if __name__ == "__main__":
         ("Critical Battery, Light Task", 10, 3000, 8e6, 1e6),
     ]
     
-    for scenario_name, battery, cycles, data_size, result_size in scenarios:
-        print(f"\n{'='*70}")
-        print(f"Scenario: {scenario_name}")
-        print(f"{'='*70}")
-        
-        task = Task(
-            task_id=1,
-            workload=cycles * 1e6,
-            data_size=data_size * 8,
-            result_size=result_size * 8,
-            priority=Priority.MEDIUM,
-            deadline=2.0
-        )
-        
-        state = SystemState(
-            battery=battery,
-            cpu_load=50.0,
-            bandwidth=55e6,
-            time_of_day=14,
-            activity=Activity.NORMAL
-        )
-        
-        decision, _ = apeato.make_decision(task, state)
-        result = apeato.execute_and_learn(task, state, decision)
-        
-        print(f"\nFinal Decision: {decision.name}")
-        print(f"Energy: {result['energy']:.4f} J")
-        print(f"Latency: {result['latency']:.4f} s")
-        print(f"Optimal: {result['optimal']}")
+    for i in range(20): # Run more iterations to populate table
+        for scenario_name, battery, cycles, data_size, result_size in scenarios:
+            task = Task(
+                task_id=1,
+                workload=cycles * 1e6,
+                data_size=data_size * 8,
+                result_size=result_size * 8,
+                priority=Priority.MEDIUM,
+                deadline=2.0
+            )
+            
+            state = SystemState(
+                battery=battery,
+                cpu_load=50.0,
+                bandwidth=55e6,
+                time_of_day=14,
+                activity=Activity.NORMAL
+            )
+            
+            decision, _ = apeato.make_decision(task, state)
+            result = apeato.execute_and_learn(task, state, decision)
+    
+    # Save the table
+    apeato.save_q_table()
